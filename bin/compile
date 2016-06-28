@@ -210,7 +210,7 @@ if [ ! -z "${env_dir}" ]
 then
     mkdir -p "${env_dir}"
     env_dir=$(cd "${env_dir}/" && pwd)
-  for key in CGO_CFLAGS CGO_CPPFLAGS CGO_CXXFLAGS CGO_LDFLAGS GO_LINKER_SYMBOL GO_LINKER_VALUE GO15VENDOREXPERIMENT GOVERSION GO_INSTALL_PACKAGE_SPEC
+  for key in CGO_CFLAGS CGO_CPPFLAGS CGO_CXXFLAGS CGO_LDFLAGS GO_LINKER_SYMBOL GO_LINKER_VALUE GO15VENDOREXPERIMENT GOVERSION GOIMPORTPATH GO_INSTALL_PACKAGE_SPEC
     do
         if [ -f "${env_dir}/${key}" ]
         then
@@ -222,6 +222,7 @@ fi
 godepsJSON="${build}/Godeps/Godeps.json"
 vendorJSON="${build}/vendor/vendor.json"
 glideYAML="${build}/glide.yaml"
+gvtManifest="${build}/vendor/manifest"
 
 if test -f "${godepsJSON}"
 then
@@ -270,6 +271,17 @@ elif test -f "${glideYAML}"
 then
     TOOL="glide"
     setGoVersionFromEnvironment
+elif test -f "${gvtManifest}"
+then
+	TOOL="gvt"
+	setGoVersionFromEnvironment
+	if test -z "${GOIMPORTPATH}"
+	then
+		err "'GOIMPORTPATH' isn't set"
+		err "You must set GOIMPORTPATH to the import path for the root of your project"
+		exit 1
+	fi
+	name="$GOIMPORTPATH"
 elif (test -d "$build/src" && test -n "$(find "$build/src" -mindepth 2 -type f -name '*.go' | sed 1q)")
 then
     TOOL="gb"
@@ -479,6 +491,22 @@ case ${TOOL} in
         step "Running: go install -v ${FLAGS[@]} ${pkgs}"
         go install -v "${FLAGS[@]}" ${pkgs} 2>&1
     ;;
+	gvt)
+		export GOPATH="${build}/.heroku/go"
+		PATH="${GOPATH}/bin:${GOROOT}/bin:${PATH}"
+
+		step "Installing gvt"
+		go get -u github.com/FiloSottile/gvt
+
+		export GOBIN=$build/bin
+		p=$GOPATH/src/$name
+		mkdir -p $p
+		cp -R $build/* $p
+		step "Getching any unsaved dependencies"
+		gvt restore
+		step "Running: go install -v ${FLAGS[@]} ${name}"
+		go install -v "${FLAGS[@]}" ${name} 2>&1
+	;;
     gb)
         gbver="0.4.1"
         export GOPATH="${cache}/gb/${gbver}"
